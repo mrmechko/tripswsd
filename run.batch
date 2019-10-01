@@ -1,2 +1,2 @@
 #!/bin/bash
-allennlp train -s output1 --include-package tripswsd ner-bert.jsonnet
+allennlp train -s output1 --include-package tripswsd bert-simple.jsonnet

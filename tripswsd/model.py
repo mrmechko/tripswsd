@@ -8,6 +8,7 @@ from allennlp.models import Model
 from allennlp.nn.util import get_text_field_mask, sequence_cross_entropy_with_logits
 from allennlp.training.metrics import CategoricalAccuracy
 
+CUDA_DEVICE=0
 
 def full_mask(sentence, labels, skip=0):
     mask = get_text_field_mask(sentence).long()
@@ -15,9 +16,9 @@ def full_mask(sentence, labels, skip=0):
         mask = torch.where(
                 labels != skip, 
                 mask, 
-                torch.zeros(labels.shape).long()
+                torch.zeros(labels.shape).long().cuda(CUDA_DEVICE)
             )
-    return mask
+    return mask.cuda(CUDA_DEVICE)
 
 @Model.register("BaseLSTM")
 class LstmTagger(Model):
@@ -26,17 +27,20 @@ class LstmTagger(Model):
                  encoder: Seq2SeqEncoder,
                  vocab: Vocabulary) -> None:
         super().__init__(vocab)
+        self.dbg_ctr = 0
         self.word_embeddings = word_embeddings
-        self.encoder = encoder
+        self.encoder = encoder.cuda(CUDA_DEVICE)
         self.hidden2tag = torch.nn.Linear(in_features=encoder.get_output_dim(),
-                                          out_features=vocab.get_vocab_size('labels'))
+                                          out_features=vocab.get_vocab_size('labels')).cuda(CUDA_DEVICE)
         self.accuracy = CategoricalAccuracy()
         self.blank_index = vocab.get_token_index("_")
+
     def forward(self,
                 sentence: Dict[str, torch.Tensor],
                 labels: torch.Tensor = None) -> Dict[str, torch.Tensor]:
-        mask = get_text_field_mask(sentence)
-        embeddings = self.word_embeddings(sentence)
+        self.dbg_ctr += 1
+        mask = get_text_field_mask(sentence).cuda(CUDA_DEVICE)
+        embeddings = self.word_embeddings(sentence).cuda(CUDA_DEVICE)
         encoder_out = self.encoder(embeddings, mask)
         tag_logits = self.hidden2tag(encoder_out)
         output = {"tag_logits": tag_logits}
@@ -46,6 +50,7 @@ class LstmTagger(Model):
             output["loss"] = sequence_cross_entropy_with_logits(tag_logits, labels, mask)
 
         return output
+
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         return {"accuracy": self.accuracy.get_metric(reset)}
 
